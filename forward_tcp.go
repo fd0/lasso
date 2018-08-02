@@ -28,19 +28,23 @@ func forward(wg *errgroup.Group, c1, c2 io.ReadWriteCloser) {
 	})
 }
 
-// connectPlainTCP connects the two endpoints and forwards data between them.
-// If the connection to the outbound endpoint could be established successfully
-// at some point, success is set to true.
-func connectPlainTCP(outbound, target string) (success bool, err error) {
-	verbose("[tcp %v] connecting\n", outbound)
+// TCPConnection describes one plain tcp connection to a server.
+type TCPConnection struct {
+	Server string `hcl:"server"`
+}
 
-	c1, err := net.Dial("tcp", outbound)
+// connect connects the two endpoints and forwards data between them. If the
+// connection to the outbound endpoint could be established successfully at
+// some point, success is set to true.
+func (c TCPConnection) connect(target string) (success bool, err error) {
+
+	c1, err := net.DialTimeout("tcp", c.Server, opts.ConnectTimeout)
 	if err != nil {
 		return false, err
 	}
 
-	verbose("[tcp %v] success, connected\n", outbound)
-	verbose("[tcp %v] connecting target %v\n", outbound, target)
+	verbose("[tcp %v] success, connected\n", c.Server)
+	verbose("[tcp %v] connecting target %v\n", c.Server, target)
 
 	c2, err := net.Dial("tcp", target)
 	if err != nil {
@@ -48,29 +52,27 @@ func connectPlainTCP(outbound, target string) (success bool, err error) {
 		return true, err
 	}
 
-	verbose("[tcp %v] success, connected to target %v, start forwarding data\n", outbound, target)
+	verbose("[tcp %v] success, connected to target %v, start forwarding data\n", c.Server, target)
 	wg := &errgroup.Group{}
 	forward(wg, c1, c2)
 	return true, wg.Wait()
 }
 
-// forwardPlainTCP connects the two endpoints, it creates multiple Goroutines
-// with the given Group.
-func forwardPlainTCP(wg *errgroup.Group, outbound, target string) {
+// Forward connects the two endpoints, it creates multiple Goroutines with the
+// given wg.
+func (c TCPConnection) Forward(wg *errgroup.Group, target string) {
 	wg.Go(func() error {
 		for {
-			success, err := connectPlainTCP(outbound, target)
+			success, err := c.connect(target)
 			if err != nil {
-				printErr("[tcp %v] connection died, error: %v, sleeping\n", outbound, err)
+				printErr("[tcp %v] connection died, error: %v, sleeping\n", c.Server, err)
 			}
 
 			delay := opts.BackoffDelay
 			if success {
 				delay = opts.ReconnectDelay
-				time.Sleep(opts.ReconnectDelay)
 			}
 
-			verbose("[tcp %v] reconnecting after %v\n", outbound, opts.ReconnectDelay)
 			time.Sleep(delay)
 		}
 	})

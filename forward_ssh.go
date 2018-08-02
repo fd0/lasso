@@ -8,21 +8,30 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func connectSSH(cfg SSHConnection, target string) (success bool, err error) {
-	signer, err := ssh.ParsePrivateKey([]byte(cfg.Key))
+// SSHConnection describes one SSH connection to a server.
+type SSHConnection struct {
+	Server       string `hcl:"server"`
+	RemoteListen string `hcl:"remote_listen"`
+	User         string `hcl:"user"`
+	Hostkey      string `hcl:"hostkey"`
+	Key          string `hcl:"key"`
+}
+
+func (c SSHConnection) connect(target string) (success bool, err error) {
+	signer, err := ssh.ParsePrivateKey([]byte(c.Key))
 	if err != nil {
-		printErr("[ssh %v] unable to parse private key: %v\n", cfg.Server, err)
+		printErr("[ssh %v] unable to parse private key: %v\n", c.Server, err)
 		return false, err
 	}
 
-	hostkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(cfg.Hostkey))
+	hostkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(c.Hostkey))
 	if err != nil {
-		printErr("[ssh %v] unable to parse host key: %v\n", cfg.Server, err)
+		printErr("[ssh %v] unable to parse host key: %v\n", c.Server, err)
 		return false, err
 	}
 
 	clientCfg := &ssh.ClientConfig{
-		User: cfg.User,
+		User: c.User,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
@@ -30,21 +39,20 @@ func connectSSH(cfg SSHConnection, target string) (success bool, err error) {
 		HostKeyAlgorithms: []string{
 			hostkey.Type(),
 		},
+		Timeout: opts.ConnectTimeout,
 	}
 
-	verbose("[ssh %v] trying to connect\n", cfg.Server)
-
-	client, err := ssh.Dial("tcp", cfg.Server, clientCfg)
+	client, err := ssh.Dial("tcp", c.Server, clientCfg)
 	if err != nil {
-		printErr("[ssh %v] error: %v\n", cfg.Server, err)
+		printErr("[ssh %v] error: %v\n", c.Server, err)
 		return false, err
 	}
 
-	verbose("[ssh %v] connected\n", cfg.Server)
+	verbose("[ssh %v] connected\n", c.Server)
 
-	remoteListen, err := client.Listen("tcp", cfg.RemoteListen)
+	remoteListen, err := client.Listen("tcp", c.RemoteListen)
 	if err != nil {
-		printErr("[ssh %v] unable to listen remotely on %v: %v\n", cfg.Server, cfg.RemoteListen, err)
+		printErr("[ssh %v] unable to listen remotely on %v: %v\n", c.Server, c.RemoteListen, err)
 		_ = client.Close()
 		return true, err
 	}
@@ -53,20 +61,20 @@ func connectSSH(cfg SSHConnection, target string) (success bool, err error) {
 	for {
 		incoming, err := remoteListen.Accept()
 		if err != nil {
-			printErr("[ssh %v] error accepting incoming remote connection: %v\n", cfg.Server, err)
+			printErr("[ssh %v] error accepting incoming remote connection: %v\n", c.Server, err)
 			break
 		}
 
-		verbose("[ssh %v] new incoming connection from remote %v, err %v\n", cfg.Server, incoming.RemoteAddr(), err)
+		verbose("[ssh %v] new incoming connection from remote %v, err %v\n", c.Server, incoming.RemoteAddr(), err)
 
 		conn, err := net.Dial("tcp", target)
 		if err != nil {
-			printErr("[ssh %v] unable to connect to target %v: %v\n", cfg.Server, target, err)
+			printErr("[ssh %v] unable to connect to target %v: %v\n", c.Server, target, err)
 			_ = client.Close()
 			return true, err
 		}
 
-		verbose("[ssh %v] success, connected to target %v, start forwarding data\n", cfg.Server, target)
+		verbose("[ssh %v] success, connected to target %v, start forwarding data\n", c.Server, target)
 		forward(wg, incoming, conn)
 	}
 
@@ -79,12 +87,12 @@ func connectSSH(cfg SSHConnection, target string) (success bool, err error) {
 	return true, client.Close()
 }
 
-// forwardSSH connects to an SSH server and creates a new remote port forward to target.
-func forwardSSH(cfg SSHConnection, target string) {
+// Forward connects to an SSH server and creates a new remote port forward to target.
+func (c SSHConnection) Forward(target string) {
 	for {
-		success, err := connectSSH(cfg, target)
+		success, err := c.connect(target)
 		if err != nil {
-			printErr("[ssh %v] error: %v\n", cfg.Server, err)
+			printErr("[ssh %v] error: %v\n", c.Server, err)
 		}
 
 		if success {

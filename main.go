@@ -14,6 +14,7 @@ type Options struct {
 	Quiet      bool
 	ConfigFile string
 
+	ConnectTimeout time.Duration
 	ReconnectDelay time.Duration
 	BackoffDelay   time.Duration
 }
@@ -71,12 +72,12 @@ func main() {
 
 	// connect to plain tcp ports
 	for _, tcp := range cfg.TCP {
-		forwardPlainTCP(wg, tcp.Server, cfg.Target)
+		tcp.Forward(wg, cfg.Target)
 	}
 
 	// connect to SSH servers
 	for _, ssh := range cfg.SSH {
-		forwardSSH(ssh, cfg.Target)
+		ssh.Forward(cfg.Target)
 	}
 
 	err = wg.Wait()
