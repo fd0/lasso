@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -12,9 +11,9 @@ import (
 
 // Options collects global configuration.
 type Options struct {
-	Quiet          bool
-	TCPServer      []string
-	Target         string
+	Quiet      bool
+	ConfigFile string
+
 	ReconnectDelay time.Duration
 	BackoffDelay   time.Duration
 }
@@ -43,10 +42,7 @@ func printErr(msg string, args ...interface{}) {
 func main() {
 	flags = pflag.NewFlagSet("connectbackd", pflag.ContinueOnError)
 	flags.BoolVar(&opts.Quiet, "quiet", false, "Be quiet, only print errors")
-	flags.StringArrayVar(&opts.TCPServer, "tcp", nil, "Connect back to `host:port` via plain TCP (can be specified multiple times)")
-	flags.StringVar(&opts.Target, "target", "localhost:22", "Connect to `host:port`")
-	flags.DurationVar(&opts.ReconnectDelay, "reconnect", 2*time.Second, "Wait for `duration` before reconnecting")
-	flags.DurationVar(&opts.BackoffDelay, "backoff", 10*time.Second, "Wait for `duration` before trying to connect")
+	flags.StringVar(&opts.ConfigFile, "config", "", "Load configuration from `filename`")
 
 	err := flags.Parse(os.Args)
 	if err == pflag.ErrHelp {
@@ -58,17 +54,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, srv := range opts.TCPServer {
-		if !strings.Contains(srv, ":") {
-			printErr("Arong format for --server, need host:port\n")
+	var cfg Config
+	if opts.ConfigFile != "" {
+		verbose("loading config %v\n", opts.ConfigFile)
+		cfg, err = ParseConfig(opts.ConfigFile)
+		if err != nil {
+			printErr("error parsing config file: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	// connect back to plain tcp ports
+	opts.BackoffDelay = time.Duration(cfg.BackoffDelay) * time.Second
+	opts.ReconnectDelay = time.Duration(cfg.ReconnectDelay) * time.Second
+
 	wg := &errgroup.Group{}
-	for _, server := range opts.TCPServer {
-		forwardPlainTCP(wg, server, opts.Target)
+
+	// connect to plain tcp ports
+	for _, tcp := range cfg.TCP {
+		forwardPlainTCP(wg, tcp.Server, cfg.Target)
+	}
+
+	// connect to SSH servers
+	for _, ssh := range cfg.SSH {
+		forwardSSH(ssh, cfg.Target)
 	}
 
 	err = wg.Wait()
