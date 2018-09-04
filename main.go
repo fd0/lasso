@@ -41,7 +41,7 @@ func printErr(msg string, args ...interface{}) {
 }
 
 func main() {
-	flags = pflag.NewFlagSet("connectbackd", pflag.ContinueOnError)
+	flags = pflag.NewFlagSet("lasso", pflag.ContinueOnError)
 	flags.BoolVar(&opts.Quiet, "quiet", false, "Be quiet, only print errors")
 	flags.StringVar(&opts.ConfigFile, "config", "", "Load configuration from `filename`")
 

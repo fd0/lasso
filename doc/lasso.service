@@ -1,0 +1,11 @@
+[Unit]
+Description=lasso - connect back to server
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lasso --config /etc/lasso.conf
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target
