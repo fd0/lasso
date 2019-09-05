@@ -77,7 +77,7 @@ func main() {
 
 	// connect to SSH servers
 	for _, ssh := range cfg.SSH {
-		ssh.Forward(cfg.Target)
+		ssh.Forward(wg, cfg.Target)
 	}
 
 	err = wg.Wait()

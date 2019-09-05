@@ -88,17 +88,19 @@ func (c SSHConnection) connect(target string) (success bool, err error) {
 }
 
 // Forward connects to an SSH server and creates a new remote port forward to target.
-func (c SSHConnection) Forward(target string) {
-	for {
-		success, err := c.connect(target)
-		if err != nil {
-			printErr("[ssh %v] error: %v\n", c.Server, err)
-		}
+func (c SSHConnection) Forward(wg *errgroup.Group, target string) {
+	wg.Go(func() error {
+		for {
+			success, err := c.connect(target)
+			if err != nil {
+				printErr("[ssh %v] error: %v\n", c.Server, err)
+			}
 
-		if success {
-			time.Sleep(opts.ReconnectDelay)
-		} else {
-			time.Sleep(opts.BackoffDelay)
+			if success {
+				time.Sleep(opts.ReconnectDelay)
+			} else {
+				time.Sleep(opts.BackoffDelay)
+			}
 		}
-	}
+	})
 }
