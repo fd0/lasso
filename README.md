@@ -1,1 +1,1 @@
-build: `go run build.go`
+build: `go build`
